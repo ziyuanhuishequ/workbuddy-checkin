@@ -1,0 +1,1444 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WorkBuddy 自动签到</title>
+<style>
+  :root{
+    --bg:#f5f7fb; --card:#ffffff; --line:#e6eaf2; --text:#1c2536; --muted:#7b8698;
+    --brand:#3b6cf6; --brand-dark:#2f57c9; --ok:#12a150; --warn:#d98207; --err:#e0403f;
+    --radius:14px; --shadow:0 1px 3px rgba(21,32,55,.07),0 8px 24px rgba(21,32,55,.05);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);
+    font:14px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
+  a{color:var(--brand)}
+  .hidden{display:none !important}
+
+  /* 登录页 */
+  #login{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;
+    justify-content:center;gap:16px;padding:24px 16px;overflow:auto;background:
+    linear-gradient(135deg,#eef3ff 0%,#f7f9fc 55%,#eafaf3 100%);z-index:50}
+  /* ===== 广告位（Loomy）=====
+     整张图就是一个原生 <a href>，点哪儿都能跳，且不会被弹窗拦截。
+     别改成 <button> + window.open()：等接口返回再开窗会开出 about:blank。 */
+  .adbox{display:block;width:min(440px,92vw);border-radius:14px;overflow:hidden;line-height:0;
+    box-shadow:0 8px 22px rgba(17,28,60,.16);transition:.18s;text-decoration:none;flex:none}
+  .adbox:hover{box-shadow:0 10px 26px rgba(17,28,60,.24);transform:translateY(-1px)}
+  .adbox img{display:block;width:100%;height:auto;border-radius:14px}
+  .adbox:active{transform:none}
+  .login-box{width:min(400px,92vw);background:var(--card);border-radius:18px;padding:34px 30px;
+    box-shadow:var(--shadow);text-align:center}
+  .login-box h1{font-size:20px;margin:0 0 6px}
+  .login-box p{color:var(--muted);margin:0 0 22px;font-size:13px}
+  .logo{width:52px;height:52px;border-radius:15px;background:linear-gradient(135deg,#3b6cf6,#5ea2ff);
+    display:flex;align-items:center;justify-content:center;color:#fff;font-size:24px;margin:0 auto 16px}
+
+  /* 布局 */
+  header{background:var(--card);border-bottom:1px solid var(--line);padding:14px 22px;
+    display:flex;align-items:center;gap:14px;flex-wrap:wrap;position:sticky;top:0;z-index:20}
+  header .title{font-weight:650;font-size:16px;display:flex;align-items:center;gap:9px}
+  header .dot{width:9px;height:9px;border-radius:50%;background:var(--ok)}
+  header .spacer{flex:1}
+  .sub{color:var(--muted);font-size:12.5px}
+  main{max-width:1180px;margin:0 auto;padding:22px 18px 60px}
+
+  /* 通用组件 */
+  .btn{border:1px solid var(--line);background:#fff;color:var(--text);padding:8px 14px;border-radius:9px;
+    cursor:pointer;font-size:13.5px;font-family:inherit;transition:.15s;white-space:nowrap}
+  .btn:hover{border-color:#c8d3e6;background:#fafbfe}
+  .btn:disabled{opacity:.5;cursor:not-allowed}
+  .btn.primary{background:var(--brand);border-color:var(--brand);color:#fff}
+  .btn.primary:hover{background:var(--brand-dark)}
+  .btn.danger{color:var(--err);border-color:#f3c9c8}
+  .btn.danger:hover{background:#fdf3f3}
+  .btn.sm{padding:5px 10px;font-size:12.5px;border-radius:7px}
+  .card{background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);padding:18px 20px;margin-bottom:16px}
+  .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:16px}
+  .stat{background:var(--card);border-radius:var(--radius);padding:15px 17px;box-shadow:var(--shadow)}
+  .stat .k{color:var(--muted);font-size:12.5px}
+  .stat .v{font-size:25px;font-weight:660;margin-top:3px;line-height:1.25}
+  .tabs{display:flex;gap:5px;margin-bottom:14px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+  .tab{padding:9px 15px;cursor:pointer;border-bottom:2px solid transparent;color:var(--muted);
+    font-weight:550;font-size:14px;margin-bottom:-1px}
+  .tab.active{color:var(--brand);border-bottom-color:var(--brand)}
+  input,select,textarea{width:100%;padding:9px 12px;border:1px solid var(--line);border-radius:9px;
+    font:inherit;font-size:13.5px;background:#fff;color:var(--text);outline:none;transition:.15s}
+  input:focus,select:focus,textarea:focus{border-color:var(--brand);box-shadow:0 0 0 3px rgba(59,108,246,.1)}
+  textarea{resize:vertical;min-height:96px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.5px}
+  label.f{display:block;margin-bottom:14px}
+  label.f>span{display:block;font-size:12.5px;color:var(--muted);margin-bottom:5px;font-weight:550}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:0 16px}
+  @media(max-width:640px){.grid2{grid-template-columns:1fr}}
+
+  /* 表格 */
+  .table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  table{width:100%;border-collapse:collapse;font-size:13.5px}
+  th{text-align:left;color:var(--muted);font-weight:600;font-size:12.5px;padding:9px 10px;
+    border-bottom:1px solid var(--line);white-space:nowrap}
+  td{padding:11px 10px;border-bottom:1px solid #f2f5fa;vertical-align:middle}
+  tr:last-child td{border-bottom:none}
+  tbody tr:hover{background:#fafbfe}
+  .name{font-weight:600}
+  .mono{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;color:var(--muted)}
+  .badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:12px;font-weight:600;white-space:nowrap}
+  .b-ok{background:#e7f8ee;color:var(--ok)}
+  .b-wait{background:#eef1f7;color:var(--muted)}
+  .b-err{background:#fdeceb;color:var(--err)}
+  .b-warn{background:#fdf4e5;color:var(--warn)}
+  .act{display:flex;gap:6px;flex-wrap:wrap}
+  .empty{text-align:center;color:var(--muted);padding:44px 10px}
+  .empty .big{font-size:34px;margin-bottom:8px;opacity:.35}
+
+  /* 弹窗 */
+  .mask{position:fixed;inset:0;background:rgba(17,24,39,.5);display:flex;align-items:center;
+    justify-content:center;z-index:60;padding:16px;backdrop-filter:blur(2px)}
+  .modal{background:#fff;border-radius:16px;width:min(520px,100%);max-height:90vh;overflow:auto;
+    box-shadow:0 24px 60px rgba(10,20,40,.25)}
+  .modal h3{margin:0;padding:18px 22px;border-bottom:1px solid var(--line);font-size:16px;
+    display:flex;align-items:center;justify-content:space-between}
+  .modal .body{padding:20px 22px}
+  .modal .foot{padding:14px 22px;border-top:1px solid var(--line);display:flex;gap:9px;justify-content:flex-end}
+  .x{border:none;background:none;font-size:22px;color:var(--muted);cursor:pointer;line-height:1;padding:0 4px}
+  .x:hover{color:var(--text)}
+
+  /* 电脑端登录面板 */
+  .qr-wrap{text-align:center}
+  .qr-tip{margin-top:12px;font-size:13.5px;font-weight:600}
+  .qr-steps{color:var(--muted);font-size:12.5px;margin-top:6px;line-height:1.8}
+  .spinner{width:15px;height:15px;border:2px solid rgba(255,255,255,.35);border-top-color:#fff;
+    border-radius:50%;display:inline-block;animation:spin .7s linear infinite;vertical-align:-2px}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .toast{position:fixed;top:18px;left:50%;transform:translateX(-50%);background:#1c2536;color:#fff;
+
+  /* 隐私说明 */
+  .privacy{margin-top:18px;padding-top:16px;border-top:1px solid var(--line);
+    color:var(--muted);font-size:12px;line-height:1.9;text-align:left}
+  .privacy b{color:var(--text)}
+  .notice{display:flex;gap:12px;align-items:flex-start;background:#eef4ff;border:1px solid #d6e4ff;
+    border-radius:var(--radius);padding:13px 16px;margin-bottom:16px;font-size:13px;
+    line-height:1.9;color:#2b4a8f}
+  .notice b{color:#1c3a7a}
+  .notice .x{flex:none;color:#6b86bd}
+  .notice .x:hover{color:#1c3a7a}
+  .privacy-inline{margin-top:9px;font-size:12px;color:var(--ok);line-height:1.75}
+  .danger-zone{border:1px solid #f3d6d5;background:#fffbfb}
+
+  /* 前端登录凭据展示 */
+  .cred-box{background:#f5f9ff;border:1px solid #d9e6ff;border-radius:12px;padding:14px 16px;
+    text-align:left;font-size:13px}
+  .cred-box .cred-title{font-weight:650;color:#1c3a7a;margin-bottom:9px}
+  .cred-line{display:flex;justify-content:space-between;align-items:center;gap:12px;
+    padding:6px 0;border-bottom:1px dashed #dce7fb}
+  .cred-line:last-of-type{border-bottom:none}
+  .cred-line span{color:var(--muted);font-size:12.5px;flex:none}
+  .cred-line b{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px;color:#12306b;
+    word-break:break-all;text-align:right}
+  .cred-box .btn{margin-top:10px}
+  .cred-box .hint{margin-top:8px;font-size:12px;color:var(--warn);line-height:1.7}
+    padding:10px 18px;border-radius:10px;font-size:13.5px;z-index:99;box-shadow:0 8px 24px rgba(0,0,0,.2);
+    max-width:90vw;text-align:center}
+  .toast.err{background:var(--err)} .toast.ok{background:var(--ok)}
+  .hint{color:var(--muted);font-size:12.5px;margin-top:6px;line-height:1.7}
+  .switch{display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none}
+  .switch input{width:auto;margin:0}
+  .sep{height:1px;background:var(--line);margin:18px 0}
+  code{background:#f1f4f9;padding:1px 5px;border-radius:4px;font-size:12px}
+</style>
+</head>
+<body>
+
+<!-- 登录 -->
+<div id="login">
+  <div class="login-box">
+    <div class="logo">✓</div>
+    <h1>WorkBuddy 自动签到</h1>
+    <p>多账号 · 电脑端登录 · 服务器常驻</p>
+    <input type="password" id="pwd" placeholder="请输入控制台密码" autocomplete="current-password">
+    <div style="height:12px"></div>
+    <button class="btn primary" id="loginBtn" style="width:100%;padding:10px">登 录</button>
+    <p style="margin-top:16px;margin-bottom:0;font-size:12px">
+      密码首次启动时自动生成，见服务器 <code>data/password.txt</code> 或启动日志
+    </p>
+    <div class="privacy">
+      🔒 <b>本站不收集、不上传你的任何信息</b><br>
+      仅用于 WorkBuddy 每日自动签到，内部小范围使用<br>
+      账号凭据只保存在本服务器，随时可以退出登录清除<br>
+      同一个人可以添加任意多个账号
+    </div>
+  </div>
+</div>
+
+<!-- 主体 -->
+<div id="app" class="hidden">
+  <header>
+    <div class="title"><span class="dot"></span> WorkBuddy 自动签到</div>
+    <div class="sub" id="nextRun"></div>
+    <div class="spacer"></div>
+    <button class="btn" id="refreshAll">全部自检</button>
+    <button class="btn primary" id="checkinAll">一键全部签到</button>
+    <button class="btn primary" id="addAccount">+ 添加账号</button>
+    <button class="btn" id="logoutBtn">退出控制台</button>
+  </header>
+
+  <main>
+    <div class="notice" id="notice">
+      <div>
+        <b>🔒 隐私说明</b>　本站<b>不收集、不上传</b>你的任何信息，仅用于 WorkBuddy 每日自动签到，内部小范围使用。
+        账号凭据只保存在本服务器（加密存储），不会发送到任何第三方。
+        你可以随时在任意账号上点「退出登录」立即清除它的凭据，也可以在
+        「设置 → 隐私与退出」里一键清除全部账号。同一个人可以添加任意多个账号。
+      </div>
+      <button class="x" id="noticeClose" title="不再提示">&times;</button>
+    </div>
+    <div class="stats" id="stats"></div>
+
+    <div class="tabs">
+      <div class="tab active" data-tab="accounts">账号</div>
+      <div class="tab" data-tab="logs">日志</div>
+      <div class="tab" data-tab="settings">设置</div>
+    </div>
+
+    <div id="tab-accounts">
+      <div class="row" style="margin-bottom:10px">
+        <span class="sub" id="expiredHint"></span>
+        <div class="spacer"></div>
+        <button class="btn sm" id="cleanupExpired">🧹 清理失效账号</button>
+      </div>
+      <div class="card" style="padding:0">
+        <div class="table-wrap">
+          <table>
+            <thead><tr>
+              <th style="text-align:left">账号</th><th>登录态</th>
+              <th>今日签到</th><th>积分余额</th><th>今日获得</th>
+              <th>令牌到期</th><th style="text-align:right">操作</th>
+            </tr></thead>
+            <tbody id="accountsBody"></tbody>
+          </table>
+        </div>
+        <div class="empty hidden" id="accountsEmpty">
+          <div class="big">📭</div>
+          <div>还没有账号，点右上角「+ 添加账号」登录一次即可</div>
+          <div class="sub" style="margin-top:6px">同一个人可以添加任意多个账号，随时可以退出登录</div>
+        </div>
+      </div>
+    </div>
+
+    <div id="tab-logs" class="hidden">
+      <div class="card">
+        <div class="row" style="margin-bottom:12px">
+          <select id="logKind" style="width:auto">
+            <option value="">全部类型</option>
+            <option value="checkin">签到</option>
+            <option value="refresh">续期</option>
+            <option value="login">登录</option>
+            <option value="notify">提醒</option>
+            <option value="system">系统</option>
+          </select>
+          <button class="btn sm" id="reloadLogs">刷新</button>
+          <span class="sub" id="logCount"></span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>时间</th><th>类型</th><th>账号</th><th>结果</th><th style="text-align:left">详情</th></tr></thead>
+            <tbody id="logsBody"></tbody>
+          </table>
+        </div>
+        <div class="empty hidden" id="logsEmpty"><div class="big">🗒️</div><div>暂无日志</div></div>
+      </div>
+    </div>
+
+    <div id="tab-settings" class="hidden">
+      <div class="card">
+        <h3 style="margin:0 0 16px;font-size:15px">签到</h3>
+        <div class="grid2">
+          <label class="f"><span>每日签到时间（服务器时区 UTC+8）</span>
+            <input type="time" id="s_checkin_time"></label>
+          <label class="f"><span>当天失败后重试间隔（分钟）</span>
+            <input type="number" id="s_retry_interval" min="1"></label>
+          <label class="f"><span>每个账号每天最多重试次数</span>
+            <input type="number" id="s_max_retries" min="0"></label>
+          <label class="f"><span>令牌保活间隔（小时，0 = 关闭）</span>
+            <input type="number" id="s_keepalive" min="0" step="1"></label>
+          <label class="f"><span>令牌提前续期（分钟）</span>
+            <input type="number" id="s_refresh_lead" min="1"></label>
+          <label class="f"><span>自动清理失效账号（失效满 N 天自动删除，0 = 关闭）</span>
+            <input type="number" id="s_auto_cleanup" min="0" step="1"></label>
+        </div>
+        <label class="switch" style="margin-bottom:10px">
+          <input type="checkbox" id="s_startup_checkin">
+          <span>服务启动时补签当天未签到的账号</span></label>
+        <label class="switch">
+          <input type="checkbox" id="s_auto_refresh">
+          <span>自动续期 accessToken（强烈建议开启）</span></label>
+      </div>
+
+      <div class="card">
+        <h3 style="margin:0 0 16px;font-size:15px">网络</h3>
+        <label class="f"><span>上游接口域名（留空用默认主站）</span>
+          <input type="text" id="s_api_base" placeholder="https://www.workbuddy.cn"></label>
+        <label class="f"><span>上游代理（留空直连，如 http://127.0.0.1:7890）</span>
+          <input type="text" id="s_proxy" placeholder="留空表示直连"></label>
+        <div class="row" style="margin-top:6px">
+          <button class="btn" id="doDiagnose">测试上游连通性</button>
+          <span class="hint" style="margin:0" id="diagResult"></span>
+        </div>
+        <div class="hint" style="margin-top:10px">
+          「需重新登录」时先点账号上的<b>自动修复</b>：会用 refreshToken 自动续期并补签，
+          大多数情况不用重新登录。只有 refreshToken 也过期了才需要重新登录一次。
+        </div>
+      </div>
+
+      <div class="card">
+        <h3 style="margin:0 0 16px;font-size:15px">结果通知（可选）</h3>
+        <div class="grid2">
+          <label class="f"><span>通知方式</span>
+            <select id="s_notify_type">
+              <option value="none">不通知</option>
+              <option value="wecom">企业微信群机器人</option>
+              <option value="dingtalk">钉钉群机器人</option>
+              <option value="feishu">飞书群机器人</option>
+              <option value="serverchan">Server 酱（推微信）</option>
+              <option value="custom">自定义 Webhook</option>
+            </select></label>
+          <label class="f"><span>推送时机</span>
+            <select id="s_notify_on">
+              <option value="failure">仅失败时</option>
+              <option value="always">每次都推</option>
+              <option value="never">从不推送</option>
+            </select></label>
+        </div>
+        <label class="f"><span>Webhook 地址 / SendKey</span>
+          <input type="text" id="s_notify_webhook" placeholder="https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=..."></label>
+        <div class="hint" style="margin-bottom:14px">
+          <b>不知道填什么？</b><br>
+          · 想让<b>个人微信</b>收到提醒 → 选「Server 酱」，去 <code>sct.ftqq.com</code> 微信扫码拿 SendKey 填进来，
+            再去微信关注「<b>Server酱</b>」公众号（不关注收不到）。<br>
+          · 用<b>钉钉</b> → 建机器人的「安全设置」必须选<b>自定义关键词</b>并填 <code>WorkBuddy</code>；
+            选了「加签」会一直发不出去。<br>
+          · 详细图文步骤见项目里的 <code>通知配置教程.md</code>。<br>
+          · 想让<b>登录完成/积分明细</b>也推到个人微信：让用户登录自助页 <code>/me</code> →
+            「微信提醒」里填自己的 SendKey，之后登录成功、每日签到、账号失效都会收到通知。
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <button class="btn" id="testNotify">发送测试通知</button>
+          <button class="btn primary" id="notifySelftest"
+            title="逐个账号试推一条微信消息，立刻看出谁收不到、为什么收不到">🔍 用户微信提醒自检</button>
+        </div>
+        <div id="notifySelftestOut" class="hidden" style="margin-top:12px"></div>
+      </div>
+
+      <div class="card">
+        <h3 style="margin:0 0 10px;font-size:15px">分享给他人自助登录</h3>
+        <p class="hint" style="margin-top:0">
+          把下面这个链接发给要签到的人。他们打开后<b>点「🖥 打开电脑端登录页」自己登录即可</b>，
+          登录完立刻拿到只属于自己的查看账号密码 ——
+          <b>全程不需要你的控制台密码，也看不到任何别人的数据</b>。
+        </p>
+        <p class="hint" style="margin-top:8px;padding:9px 11px;border-radius:9px;background:#fff8e6;border:1px solid #eec06a;color:#7a4a00">
+          ⚠️ <b>别主动引导对方「上传令牌文件」</b>：那个文件只有装过命令行版的人才会有，
+          桌面版用户电脑里根本没有，让他去找只会白耗时间。页面上「方式二」已经自带这句提醒。
+        </p>
+        <label class="f" style="margin-top:14px"><span>自助登录链接（带令牌，只发给你信任的人）</span>
+          <input type="text" id="s_join_link" readonly style="font-size:12.5px"></label>
+        <div class="row">
+          <button class="btn primary" id="copyJoinLink">复制链接</button>
+          <button class="btn" id="regenJoinLink">换一个新链接</button>
+          <label class="switch" style="margin-left:auto">
+            <input type="checkbox" id="s_join_enabled">
+            <span>启用自助登录</span></label>
+        </div>
+        <p class="hint">
+          ⚠️ 换新链接后<b>旧链接立刻失效</b>（已经添加过的账号不受影响，照常签到）。
+          对方用拿到的凭据登录 <code>/me</code> 就能看自己的积分、暂停签到、改密码或删除凭据。
+        </p>
+      </div>
+
+      <div class="card danger-zone">
+        <h3 style="margin:0 0 8px;font-size:15px">隐私与退出</h3>
+        <p class="hint" style="margin-top:0">
+          🔒 本站<b>不收集、不上传</b>你的任何信息，账号凭据只保存在本服务器（加密存储），
+          不会发送到任何第三方。仅用于 WorkBuddy 每日自动签到，内部小范围使用。<br>
+          你可以随时在任意账号上点「退出登录」单独清除；也可以在这里一次性清除全部。
+          清除后本服务器不再保存任何凭据、也不再进行任何签到。
+        </p>
+        <p class="hint">
+          <b>用户自助页：</b><code id="portalUrl">/me</code><br>
+          在账号列表点「前端」拿到某个账号的登录账号密码，把这套凭据交给对方，
+          他打开上面这个地址登录后，只能看到<b>自己那一个账号</b>的积分余额、今日签到状态、
+          今日获得积分和签到记录，还可以自己暂停签到、修改密码，或退出登录删除凭据。
+        </p>
+        <p class="hint">
+          前端密码只以 <b>pbkdf2 哈希</b>形式保存，服务端看不到明文；
+          重置后旧密码立即失效。
+        </p>
+        <div class="row" style="margin-top:12px">
+          <button class="btn danger" id="logoutAll">一键退出全部账号</button>
+          <span class="sub">不可撤销，之后需要重新登录添加</span>
+        </div>
+      </div>
+
+      <div class="row">
+        <button class="btn primary" id="saveSettings">保存设置</button>
+        <span class="sub">保存后立即生效，无需重启服务</span>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+/* ------------------------------------------------------------------ 工具 */
+const $ = (id) => document.getElementById(id);
+
+function toast(msg, kind = '') {
+  const el = document.createElement('div');
+  el.className = 'toast ' + kind;
+  el.textContent = msg;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), kind === 'err' ? 5200 : 2600);
+}
+
+async function api(path, options = {}) {
+  const opts = { credentials: 'same-origin', headers: {}, ...options };
+  if (opts.body !== undefined && typeof opts.body !== 'string') {
+    opts.headers['Content-Type'] = 'application/json';
+    opts.body = JSON.stringify(opts.body);
+  }
+  const res = await fetch(path, opts);
+  let data = null;
+  try { data = await res.json(); } catch (e) { data = null; }
+  if (res.status === 401 && path !== '/api/login') { showLogin(); throw new Error('未登录'); }
+  if (!res.ok || (data && data.ok === false)) {
+    const err = new Error((data && (data.error || data.detail)) || ('请求失败 HTTP ' + res.status));
+    err.status = res.status;   // 让调用方能按状态码分别提示
+    throw err;
+  }
+  return data;
+}
+
+function fmtTime(ts) {
+  if (!ts) return '—';
+  const d = new Date(ts * 1000);
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getMonth() + 1}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+}
+function fmtDate(ts) {
+  if (!ts) return '—';
+  const d = new Date(ts * 1000);
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+function fmtCountdown(ts) {
+  if (!ts) return '—';
+  const diff = Math.max(0, Math.floor(ts - Date.now() / 1000));
+  const h = Math.floor(diff / 3600), m = Math.floor((diff % 3600) / 60);
+  if (diff < 60) return '即将开始';
+  return h > 0 ? `${h} 小时 ${m} 分后` : `${m} 分钟后`;
+}
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g,
+    (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+/* 积分数展示：必须跟官方页面一个样式。
+   官方余额带小数（2865.53），以前直接拼数字既没有千分位也会被后端取整，
+   现在统一走这里：整数 → 2,866；带小数 → 2,865.53。 */
+function fmtNum(v) {
+  if (v === null || v === undefined || v === '') return '—';
+  const n = Number(v);
+  if (!isFinite(n)) return String(v);
+  return Math.abs(n - Math.round(n)) < 1e-6
+    ? Math.round(n).toLocaleString('en-US')
+    : n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+/* 剪贴板：局域网多半是 http，navigator.clipboard 不可用，得留降级方案 */
+function copyToClipboard(text) {
+  const ok = () => toast('已复制到剪贴板', 'ok');
+  const fallback = () => {
+    const area = document.createElement('textarea');
+    area.value = text;
+    area.style.position = 'fixed';
+    area.style.opacity = '0';
+    document.body.appendChild(area);
+    area.select();
+    try { document.execCommand('copy'); ok(); }
+    catch (e) { toast('复制失败，请手动选中复制', 'err'); }
+    area.remove();
+  };
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(text).then(ok).catch(fallback);
+  } else {
+    fallback();
+  }
+}
+
+/* 前端登录信息卡片：账号 + 密码 + 登录地址，随时可查（密码加密存库，能解密） */
+function credentialCard(username, password, nickname) {
+  const loginUrl = location.origin + '/me';
+  if (!username) {
+    return '<div class="cred-box"><div class="cred-title">账号已添加</div>'
+      + '<div class="hint">未能生成前端凭据，请点下面的「重置密码」处理。</div></div>';
+  }
+  const copyText = password
+    ? `前端账号：${username}\n前端密码：${password}\n登录地址：${loginUrl}`
+    : `前端账号：${username}\n登录地址：${loginUrl}`;
+  const pwLine = password
+    ? `<div class="cred-line"><span>前端密码</span><b>${esc(password)}</b></div>`
+    : '<div class="cred-line"><span>前端密码</span><b style="color:var(--warn)">取不到，请重置</b></div>';
+  const tip = password
+    ? '把上面的账号、密码、登录地址发给对方即可，他打开就能看到自己的积分和签到情况。'
+    : '这个账号是在旧版本下创建的，当时只存了哈希、密码取不回来。点「重置密码」生成一个新的给他。';
+  return `<div class="cred-box">
+    <div class="cred-title">${password ? '✅ ' : ''}${nickname ? esc(nickname) + ' 的前端登录信息' : '前端登录信息'}</div>
+    <div class="cred-line"><span>前端账号</span><b>${esc(username)}</b></div>
+    ${pwLine}
+    <div class="cred-line"><span>登录地址</span><b>${esc(loginUrl)}</b></div>
+    <button class="btn sm primary" data-copy="${esc(copyText).replace(/\n/g, '&#10;')}">复制账号密码和地址</button>
+    <div class="hint">${tip}</div>
+  </div>`;
+}
+
+/* ------------------------------------------------------------------ 登录 */
+function showLogin() { $('login').classList.remove('hidden'); $('app').classList.add('hidden'); }
+function showApp() { $('login').classList.add('hidden'); $('app').classList.remove('hidden'); }
+
+$('loginBtn').onclick = doLogin;
+$('pwd').onkeydown = (e) => { if (e.key === 'Enter') doLogin(); };
+
+async function doLogin() {
+  const btn = $('loginBtn');
+  btn.disabled = true; btn.textContent = '登录中…';
+  try {
+    await api('/api/login', { method: 'POST', body: { password: $('pwd').value } });
+    showApp();
+    await reloadAll();
+  } catch (e) {
+    toast(e.message, 'err');
+  } finally {
+    btn.disabled = false; btn.textContent = '登 录';
+  }
+}
+
+$('logoutBtn').onclick = async () => {
+  await api('/api/logout', { method: 'POST', body: {} });
+  showLogin();
+};
+
+/* ------------------------------------------------------------------ 标签页 */
+document.querySelectorAll('.tab').forEach((tab) => {
+  tab.onclick = () => {
+    document.querySelectorAll('.tab').forEach((t) => t.classList.remove('active'));
+    tab.classList.add('active');
+    ['accounts', 'logs', 'settings'].forEach((name) => {
+      $('tab-' + name).classList.toggle('hidden', name !== tab.dataset.tab);
+    });
+    if (tab.dataset.tab === 'logs') loadLogs();
+    if (tab.dataset.tab === 'settings') loadSettings();
+  };
+});
+
+/* ------------------------------------------------------------------ 概览 */
+let ACCOUNTS = [];          // 最近一次拉到的账号列表（清理弹窗直接用，避免多打一次接口）
+let SERVER_VERSION = '';
+
+async function loadOverview() {
+  const { data } = await api('/api/overview');
+  SERVER_VERSION = data.version || '';
+  const next = data.next_run_at;
+  $('nextRun').textContent = `下次自动签到：${next ? fmtCountdown(next) : '—'}（${data.settings.checkin_time}）`;
+  const credits = fmtNum(data.credits);
+  const creditsTotal = data.credits_total
+    ? `<span style="font-size:14px;color:var(--muted)"> / ${fmtNum(data.credits_total)}</span>` : '';
+  $('stats').innerHTML = `
+    <div class="stat"><div class="k">账号总数</div><div class="v">${data.accounts}</div></div>
+    <div class="stat"><div class="k">今日已签到</div><div class="v" style="color:var(--ok)">${data.checked_in_today}<span style="font-size:15px;color:var(--muted)"> / ${data.accounts}</span></div></div>
+    <div class="stat"><div class="k">今日成功 / 失败</div><div class="v">${data.ok_today}<span style="color:var(--muted);font-size:17px"> / </span><span style="color:${data.failed_today ? 'var(--err)' : 'var(--muted)'}">${data.failed_today}</span></div></div>
+    <div class="stat"><div class="k">可用积分</div><div class="v" style="color:var(--brand)">${credits}${creditsTotal}</div>
+      <div class="mono" style="margin-top:2px;color:var(--muted);font-size:11px">官方数据，截至 ${
+        data.credits_updated_at ? fmtTime(data.credits_updated_at) : '还没查过'}　点右上「全部自检」刷新</div></div>
+    <div class="stat"><div class="k">需重新登录</div><div class="v" style="color:${data.expired ? 'var(--err)' : 'var(--muted)'}">${data.expired}</div></div>`;
+}
+
+/* ------------------------------------------------------------------ 账号 */
+async function loadAccounts() {
+  const { data } = await api('/api/accounts');
+  ACCOUNTS = Array.isArray(data) ? data : [];
+  const body = $('accountsBody');
+  $('accountsEmpty').classList.toggle('hidden', data.length > 0);
+  const expiredCount = data.filter((a) => a.status === 'expired').length;
+  $('expiredHint').textContent = expiredCount ? `有 ${expiredCount} 个账号需重新登录` : '';
+  $('expiredHint').style.color = expiredCount ? 'var(--err)' : '';
+  $('cleanupExpired').classList.toggle('hidden', expiredCount === 0);
+  body.innerHTML = data.map((a) => {
+    const status = a.enabled === false
+      ? '<span class="badge b-wait">已停用</span>'
+      : (a.status === 'expired'
+        ? '<span class="badge b-err">需重新登录</span>'
+          + '<div class="mono" style="margin-top:4px;color:var(--muted)">先点「自动修复」；还不行就重新登录，实在搞不定访问 www.example.com 联系站长</div>'
+        : (a.status === 'ok' ? '<span class="badge b-ok">正常</span>'
+          : '<span class="badge b-warn">未知</span>'));
+    const today = a.checked_in_today
+      ? '<span class="badge b-ok">已签到</span>'
+      : (a.last_log && a.last_log.ok === 0
+        ? `<span class="badge b-err" title="${esc(a.last_log.message)}">签到失败</span>`
+        : '<span class="badge b-wait">今日未签</span>');
+    const credits = fmtNum(a.credits);
+    const creditsTotal = a.credits_total ? `<span class="mono"> / ${fmtNum(a.credits_total)}</span>` : '';
+    const todayCredit = a.today_credit == null
+      ? '<span class="mono" title="今天没有新的积分到账记录">—</span>'
+      : `<b style="color:var(--ok)">+${fmtNum(a.today_credit)}</b>`;
+    // 已经签过 / 账号暂停，就不该再让人反复点
+    const canCheckin = a.enabled !== false && !a.checked_in_today;
+    const expiry = a.expires_at ? fmtDate(a.expires_at) : '—';
+    const expired = a.expires_at && a.expires_at < Date.now() / 1000;
+    return `<tr>
+      <td><div class="name">${esc(a.nickname || '(未命名)')}</div>
+          <div class="mono">UID ${esc(a.uid || '—')} · 累计签到 ${a.total_success || 0} 次 · ${a.portal_username ? '前端账号 ' + esc(a.portal_username) : '<span style="color:var(--warn)">未生成前端账号</span>'}</div></td>
+      <td>${status}${a.last_error ? `<div class="mono" title="${esc(a.last_error)}" style="max-width:190px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(a.last_error)}</div>` : ''}</td>
+      <td>${today}</td>
+      <td>${credits}${creditsTotal}</td>
+      <td>${todayCredit}</td>
+      <td class="mono" style="${expired ? 'color:var(--err)' : ''}">${expiry}</td>
+      <td><div class="act" style="justify-content:flex-end">
+        <button class="btn sm ${canCheckin ? 'primary' : ''}" data-act="checkin" data-id="${a.id}"
+          ${canCheckin ? '' : 'disabled title="今天已经签到过了，明天到点会自动签"'}>${a.checked_in_today ? '今日已签到' : '签到'}</button>
+        <button class="btn sm" data-act="status" data-id="${a.id}">自检</button>
+        ${a.notify_configured
+          ? `<button class="btn sm" data-act="notice" data-id="${a.id}"
+               title="立刻给这个账号补发一条「今天的签到情况」到微信（顺便验证他的 SendKey 还能不能用）">补发通知</button>`
+          : `<button class="btn sm" data-act="notice" data-id="${a.id}" disabled
+               title="这个账号没配微信提醒（SendKey），发不了">未开提醒</button>`}
+        <button class="btn sm" data-act="portal" data-id="${a.id}">前端</button>
+        <button class="btn sm" data-act="refresh" data-id="${a.id}">续期</button>
+        ${a.status === 'expired'
+          ? `<button class="btn sm primary" data-act="recover" data-id="${a.id}">自动修复</button>`
+          : ''}
+        <button class="btn sm" data-act="toggle" data-id="${a.id}" data-enabled="${a.enabled}">${a.enabled ? '暂停' : '恢复'}</button>
+        <button class="btn sm danger" data-act="logout" data-id="${a.id}">退出登录</button>
+      </div></td>
+    </tr>`;
+  }).join('');
+}
+
+$('accountsBody').onclick = async (e) => {
+  const btn = e.target.closest('button[data-act]');
+  if (!btn) return;
+  const id = btn.dataset.id, act = btn.dataset.act;
+  const original = btn.textContent;
+  try {
+    if (act === 'logout') {
+      if (!confirm('确定退出这个账号吗？\n\n本服务器会立即删除它的全部凭据，不再为它签到。\n你的 WorkBuddy 账号本身不受任何影响。')) return;
+      const res = await api('/api/accounts/' + id, { method: 'DELETE' });
+      toast(res.message || '已退出登录', 'ok');
+    } else if (act === 'toggle') {
+      const resume = btn.dataset.enabled !== 'true';
+      await api('/api/accounts/' + id, {
+        method: 'PATCH', body: { enabled: resume },
+      });
+      toast(resume ? '已恢复签到' : '已暂停签到（凭据仍保留）', 'ok');
+    } else if (act === 'portal') {
+      const accounts = (await api('/api/accounts')).data;
+      const target = accounts.find((x) => String(x.id) === String(id));
+      if (target) showPortalModal(target);
+      return;
+    } else {
+      btn.disabled = true; btn.textContent = '…';
+      const map = { checkin: 'checkin', status: 'status', refresh: 'refresh', recover: 'recover', notice: 'notice' };
+      const res = await api(`/api/accounts/${id}/${map[act]}`, { method: 'POST', body: {} });
+      let msg = res.data.message || (res.data.info && res.data.info.message) || '完成';
+      let bad = res.data.ok === false;
+      if (act === 'recover') {
+        if (res.data.refreshed) {
+          const c = res.data.checkin || {};
+          msg = '✅ 已自动续期并补签：' + (c.message || '完成');
+          bad = c.ok === false;
+        } else {
+          msg = res.data.message || '自动续期失败，需要重新登录';
+          bad = true;
+        }
+      }
+      toast(msg, bad ? 'err' : 'ok');
+    }
+    await reloadAll();
+  } catch (err) {
+    toast(err.message, 'err');
+  } finally {
+    btn.disabled = false; btn.textContent = original;
+  }
+};
+
+$('checkinAll').onclick = async () => {
+  const btn = $('checkinAll');
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> 签到中…';
+  try {
+    const { data } = await api('/api/accounts/checkin-all', { method: 'POST', body: {} });
+    toast(`完成：成功 ${data.ok}/${data.total}${data.failed ? '，失败 ' + data.failed : ''}`,
+          data.failed ? '' : 'ok');
+    await reloadAll();
+  } catch (e) {
+    toast(e.message, 'err');
+  } finally {
+    btn.disabled = false; btn.textContent = '一键全部签到';
+  }
+};
+
+$('refreshAll').onclick = async () => {
+  const btn = $('refreshAll');
+  btn.disabled = true; btn.textContent = '自检中…';
+  try {
+    const { data } = await api('/api/accounts');
+    let ok = 0;
+    for (const a of data) {
+      try {
+        const r = await api(`/api/accounts/${a.id}/status`, { method: 'POST', body: {} });
+        if (r.data.ok) ok++;
+      } catch (e) { /* 单个失败不影响其它 */ }
+    }
+    toast(`自检完成：${ok}/${data.length} 正常`, ok === data.length ? 'ok' : '');
+    await reloadAll();
+  } finally {
+    btn.disabled = false; btn.textContent = '全部自检';
+  }
+};
+
+/* ------------------------------------------------------------------ 日志 */
+async function loadLogs() {
+  const kind = $('logKind').value;
+  const { data } = await api('/api/logs?limit=200' + (kind ? '&kind=' + kind : ''));
+  $('logsEmpty').classList.toggle('hidden', data.length > 0);
+  $('logCount').textContent = `共 ${data.length} 条`;
+  const kindName = { checkin: '签到', refresh: '续期', login: '登录', system: '系统', notify: '提醒', portal: '用户' };
+  $('logsBody').innerHTML = data.map((l) => `
+    <tr>
+      <td class="mono">${fmtTime(l.ts)}</td>
+      <td>${kindName[l.kind] || esc(l.kind)}</td>
+      <td>${esc(l.nickname || l.uid || '—')}</td>
+      <td>${l.ok ? '<span class="badge b-ok">成功</span>' : '<span class="badge b-err">失败</span>'}</td>
+      <td>${esc(l.message)}${l.credit ? ` <span class="badge b-ok">+${l.credit}</span>` : ''}</td>
+    </tr>`).join('');
+}
+$('reloadLogs').onclick = loadLogs;
+$('logKind').onchange = loadLogs;
+
+/* ------------------------------------------------------------------ 设置 */
+async function loadSettings() {
+  const { data } = await api('/api/settings');
+  $('s_checkin_time').value = data.checkin_time || '09:00';
+  $('s_retry_interval').value = Math.round((+data.retry_interval_seconds || 1800) / 60);
+  $('s_max_retries').value = data.max_retries_per_day ?? 3;
+  $('s_refresh_lead').value = Math.round((+data.refresh_lead_seconds || 1800) / 60);
+  $('s_startup_checkin').checked = data.startup_checkin === '1';
+  $('s_auto_refresh').checked = data.auto_refresh === '1';
+  $('s_proxy').value = data.proxy || '';
+  $('s_api_base').value = data.api_base || '';
+  $('s_keepalive').value = Math.round((+data.keepalive_seconds || 7200) / 3600);
+  $('s_auto_cleanup').value = +(data.auto_cleanup_days || 0);
+  $('s_notify_type').value = data.notify_type || 'none';
+  $('s_notify_on').value = data.notify_on || 'failure';
+  $('s_notify_webhook').value = data.notify_webhook || '';
+  $('s_join_link').value = data.join_token ? (location.origin + '/join?t=' + data.join_token) : '';
+  $('s_join_enabled').checked = data.join_enabled === '1';
+}
+
+$('copyJoinLink').onclick = () => {
+  const link = $('s_join_link').value;
+  if (!link) { toast('链接还没生成，先保存一次设置', 'err'); return; }
+  copyToClipboard(link);
+};
+
+$('regenJoinLink').onclick = async () => {
+  if (!confirm('换新链接后，旧链接立刻失效（已经添加过的账号不受影响）。\n\n确定要换吗？')) return;
+  try {
+    const { data } = await api('/api/join/regenerate', { method: 'POST', body: {} });
+    $('s_join_link').value = location.origin + '/join?t=' + data.join_token;
+    toast('已生成新链接，旧链接已失效', 'ok');
+  } catch (e) {
+    toast(e.message, 'err');
+  }
+};
+
+$('s_join_enabled').onchange = async (e) => {
+  try {
+    await api('/api/settings', { method: 'POST', body: { join_enabled: e.target.checked ? '1' : '0' } });
+    toast(e.target.checked ? '自助登录已启用' : '自助登录已关闭', 'ok');
+  } catch (err) {
+    toast(err.message, 'err');
+    e.target.checked = !e.target.checked;
+  }
+};
+
+$('doDiagnose').onclick = async () => {
+  const btn = $('doDiagnose');
+  const out = $('diagResult');
+  btn.disabled = true;
+  out.textContent = '测试中…';
+  try {
+    const { data } = await api('/api/diagnose');
+    const okList = (data.origins || []).filter((x) => x.ok).map((x) => x.base);
+    out.innerHTML = okList.length
+      ? `✅ 当前使用 <code>${esc(data.current_base)}</code>，可用域名 ${okList.length} 个`
+      : '❌ 所有上游域名都不可用，请检查服务器出网 / 代理设置';
+  } catch (e) {
+    out.textContent = e.message;
+  } finally {
+    btn.disabled = false;
+  }
+};
+
+$('saveSettings').onclick = async () => {
+  try {
+    await api('/api/settings', {
+      method: 'POST',
+      body: {
+        checkin_time: $('s_checkin_time').value,
+        retry_interval_seconds: Math.max(1, +$('s_retry_interval').value || 30) * 60,
+        max_retries_per_day: Math.max(0, +$('s_max_retries').value || 0),
+        refresh_lead_seconds: Math.max(1, +$('s_refresh_lead').value || 30) * 60,
+        startup_checkin: $('s_startup_checkin').checked ? '1' : '0',
+        auto_refresh: $('s_auto_refresh').checked ? '1' : '0',
+        proxy: $('s_proxy').value.trim(),
+        api_base: $('s_api_base').value.trim(),
+        keepalive_seconds: Math.max(0, Math.round((+$('s_keepalive').value || 2) * 3600)),
+        auto_cleanup_days: Math.max(0, Math.round(+$('s_auto_cleanup').value || 0)),
+        notify_type: $('s_notify_type').value,
+        notify_on: $('s_notify_on').value,
+        notify_webhook: $('s_notify_webhook').value.trim(),
+      },
+    });
+    toast('设置已保存', 'ok');
+    await loadOverview();
+  } catch (e) { toast(e.message, 'err'); }
+};
+
+$('testNotify').onclick = async () => {
+  if (!$('s_notify_webhook').value.trim()) { toast('请先填写 Webhook 地址 / SendKey', 'err'); return; }
+  const btn = $('testNotify');
+  btn.disabled = true; btn.textContent = '发送中…';
+  try {
+    await api('/api/settings', {
+      method: 'POST',
+      body: {
+        notify_type: $('s_notify_type').value,
+        notify_on: $('s_notify_on').value,
+        notify_webhook: $('s_notify_webhook').value.trim(),
+      },
+    });
+    const res = await api('/api/notify/test', { method: 'POST', body: {} });
+    toast(res.message || '测试通知已发送', res.sent === false ? 'err' : 'ok');
+  } catch (e) {
+    toast(e.message, 'err');
+  } finally {
+    btn.disabled = false; btn.textContent = '发送测试通知';
+  }
+};
+
+$('notifySelftest').onclick = async () => {
+  const btn = $('notifySelftest');
+  const out = $('notifySelftestOut');
+  btn.disabled = true; btn.textContent = '自检中…';
+  out.classList.remove('hidden');
+  out.innerHTML = '<div class="hint">正在给每个账号试推一条，最多等十几秒…</div>';
+  try {
+    const res = await api('/api/notify/selftest', { method: 'POST', body: {} });
+    const d = res.data || {};
+    const items = d.items || [];
+    if (!items.length) { out.innerHTML = '<div class="hint">还没有任何账号。</div>'; return; }
+    const row = (x) => {
+      const tag = x.ok === true
+        ? '<span class="badge b-ok">正常</span>'
+        : (x.ok === false ? '<span class="badge b-err">发不出去</span>'
+          : '<span class="badge b-wait">没开提醒</span>');
+      return `<div style="display:flex;gap:10px;align-items:flex-start;padding:8px 0;border-bottom:1px dashed var(--line)">
+        <div style="flex:none;width:120px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"
+             title="${esc(x.nickname)}">${esc(x.nickname)}</div>
+        <div style="flex:none">${tag}</div>
+        <div class="mono" style="flex:1;color:var(--muted);word-break:break-all">${esc(x.reason)}</div>
+      </div>`;
+    };
+    out.innerHTML = `
+      <div class="warnbox" style="background:#f5f9ff;border-color:#d9e6ff;color:#1c3a7a">
+        <b>自检结果</b>：${d.total || 0} 个账号，正常 ${d.ok || 0} 个，
+        发不出去 ${d.failed || 0} 个，没开提醒 ${d.no_key || 0} 个。<br>
+        正常/发不出去 = 消息有没有真的推到微信；发不出去的原因会写在后面那列。
+      </div>
+      <div style="margin-top:10px">${items.map(row).join('')}</div>
+      <div class="hint" style="margin-top:10px">
+        「发不出去」通常是：SendKey 失效（Server酱 返回「错误的Key」）、
+        当天超过 Server酱 免费额度、或用户取关了「Server酱」公众号。<br>
+        让用户到自助页 <code>/me</code> 重新填一次 SendKey 就能恢复，填错了那里会直接提示原因。
+      </div>`;
+  } catch (e) {
+    out.innerHTML = `<div class="warnbox" style="background:#fdf3f3;border-color:#f3c9c8;color:#8a1f1f">自检失败：${esc(e.message)}</div>`;
+  } finally {
+    btn.disabled = false; btn.textContent = '🔍 用户微信提醒自检';
+  }
+};
+
+/* ------------------------------------------------------------------ 隐私与退出 */
+const NOTICE_KEY = 'wb_notice_hidden_v1';
+if (localStorage.getItem(NOTICE_KEY) === '1') $('notice').classList.add('hidden');
+
+$('noticeClose').onclick = () => {
+  localStorage.setItem(NOTICE_KEY, '1');
+  $('notice').classList.add('hidden');
+};
+
+$('logoutAll').onclick = async () => {
+  if (!confirm('确定要退出全部账号吗？\n\n本服务器会立即删除所有账号的凭据，并停止全部签到。\n想继续使用需要重新登录添加。')) return;
+  if (!confirm('再次确认：此操作不可撤销，所有已保存的账号都会被清除。')) return;
+  try {
+    const res = await api('/api/accounts/logout-all', { method: 'POST', body: {} });
+    toast(res.message || '已退出全部账号', 'ok');
+    await reloadAll();
+  } catch (e) {
+    toast(e.message, 'err');
+  }
+};
+
+/* ------------------------------------------------------------------ 添加账号 */
+function modal(html) {
+  const mask = document.createElement('div');
+  mask.className = 'mask';
+  mask.innerHTML = html;
+  mask.addEventListener('click', (e) => {
+    if (e.target === mask || e.target.closest('[data-close]')) {
+      mask.remove();
+      return;
+    }
+    const copyBtn = e.target.closest('[data-copy]');
+    if (copyBtn) copyToClipboard(copyBtn.dataset.copy);
+  });
+  document.body.appendChild(mask);
+  return mask;
+}
+
+/* 账号列表里「前端」按钮打开的弹窗：随时可查前端账号密码和登录地址 */
+function showPortalModal(account) {
+  const mask = modal(`<div class="modal">
+    <h3>前端登录信息<span class="x" data-close>&times;</span></h3>
+    <div class="body">
+      <div id="portalInfo"><span class="sub">读取中…</span></div>
+      <p class="hint" style="color:var(--muted)">
+        把这套账号密码和登录地址发给对方，他打开后<b>只能看到自己那一个账号</b>的积分余额、
+        今日签到状态、今日获得积分和签到记录，还可以自己暂停签到、修改密码，
+        或者退出登录删除凭据。
+      </p>
+      <p class="hint">密码在服务器上是加密保存的，只有这个管理控制台能查看。</p>
+    </div>
+    <div class="foot">
+      <button class="btn" data-close>关闭</button>
+      <button class="btn primary" id="resetPwBtn">重置密码</button>
+    </div>
+  </div>`);
+
+  const infoBox = mask.querySelector('#portalInfo');
+
+  async function loadInfo() {
+    try {
+      const { data } = await api(`/api/accounts/${account.id}/portal`);
+      infoBox.innerHTML = credentialCard(data.username, data.password, account.nickname);
+    } catch (e) {
+      infoBox.innerHTML = `<span class="sub" style="color:var(--err)">${esc(e.message)}</span>`;
+    }
+  }
+  loadInfo();
+
+  mask.querySelector('#resetPwBtn').onclick = async (e) => {
+    const btn = e.currentTarget;
+    if (account.portal_username && !confirm('重置后旧密码立即失效，对方需要用新密码登录。确定吗？')) return;
+    btn.disabled = true; btn.textContent = '处理中…';
+    try {
+      await api(`/api/accounts/${account.id}/portal/reset`, { method: 'POST', body: {} });
+      toast('已生成新的前端密码', 'ok');
+      await Promise.all([loadInfo(), loadAccounts()]);
+    } catch (err) {
+      toast(err.message, 'err');
+    } finally {
+      btn.disabled = false; btn.textContent = '重置密码';
+    }
+  };
+}
+
+let qrTimer = null;
+
+function stopQrTimer() { if (qrTimer) { clearInterval(qrTimer); qrTimer = null; } }
+
+/* ------------------------------------------------------------ 清理失效账号 */
+$('cleanupExpired').onclick = () => {
+  const mask = modal(`
+    <div class="modal">
+      <h3>清理失效账号<span class="x" data-close>&times;</span></h3>
+      <div class="body">
+        <p class="hint" style="margin-top:0">
+          只删除本服务器保存的登录凭据，<b>你的 WorkBuddy 账号本身不受影响</b>，以后重新登录还能加回来。
+        </p>
+        <label class="f"><span>清理范围</span>
+          <select id="cleanupDays">
+            <option value="0">全部失效账号</option>
+            <option value="7">失效超过 7 天的</option>
+            <option value="30">失效超过 30 天的</option>
+          </select></label>
+        <div id="cleanupPreview" class="hint">正在统计…</div>
+      </div>
+      <div class="foot">
+        <button class="btn" data-close>取消</button>
+        <button class="btn danger" id="doCleanup" disabled>确认清理</button>
+      </div>
+    </div>`);
+
+  const sel = mask.querySelector('#cleanupDays');
+  const preview = mask.querySelector('#cleanupPreview');
+  const okBtn = mask.querySelector('#doCleanup');
+  let count = 0;
+
+  // 预览直接在本地算：账号列表已经拿到了，不用再打一次接口。
+  // （这样即使服务端是老版本、没有 /api/accounts/expired，弹窗也照样能用）
+  const pickTargets = () => {
+    const days = Number(sel.value) || 0;
+    const cutoff = days ? (Date.now() / 1000 - days * 86400) : 0;
+    return ACCOUNTS.filter((a) => a.status === 'expired'
+      && (!cutoff || (Number(a.updated_at) || 0) <= cutoff));
+  };
+
+  const loadPreview = () => {
+    const list = pickTargets();
+    count = list.length;
+    okBtn.disabled = true;
+    if (!count) {
+      preview.innerHTML = '这个范围内没有失效账号，不用清理。';
+      return;
+    }
+    const names = list.slice(0, 8).map((a) => esc(a.nickname || a.uid || '未命名')).join('、');
+    preview.innerHTML = '将清理 <b style="color:var(--err)">' + count + '</b> 个账号：'
+      + names + (count > 8 ? ' 等' : '');
+    okBtn.disabled = false;
+  };
+  sel.onchange = loadPreview;
+  loadPreview();
+
+  okBtn.onclick = async () => {
+    if (!count) return;
+    if (!confirm(`确定清理这 ${count} 个失效账号吗？\n\n只删除本服务器上的登录凭据，WorkBuddy 账号本身不受影响。`)) return;
+    okBtn.disabled = true;
+    okBtn.textContent = '清理中…';
+    try {
+      const res = await api('/api/accounts/cleanup', { method: 'POST', body: { days: Number(sel.value) } });
+      toast((res.data && res.data.message) || '已清理', 'ok');
+      mask.remove();
+      await reloadAll();
+    } catch (e) {
+      okBtn.disabled = false;
+      okBtn.textContent = '确认清理';
+      const msg = String(e.message || e);
+      const code = Number(e.status) || 0;
+      if (code === 403) {
+        toast('被跨站校验拦了（403）：请确认是用本站域名打开的控制台，且登录状态没过期，刷新后重试', 'err');
+      } else if (code === 404 || code === 405) {
+        // 页面是新版、进程还是老版，最常见的原因就是没重启服务
+        toast('服务端版本太旧（当前 ' + (SERVER_VERSION || '未知') + '），还没有清理接口：请到宝塔「Python 项目」重启本服务，然后刷新本页重试', 'err');
+      } else if (code === 500 && /locked|busy/i.test(msg)) {
+        toast('数据库忙（其他任务正在写入），等几秒再点一次', 'err');
+      } else {
+        toast('清理失败：' + msg + (code ? '（HTTP ' + code + '）' : ''), 'err');
+      }
+    }
+  };
+};
+
+$('addAccount').onclick = () => {
+  const mask = modal(`
+    <div class="modal">
+      <h3>添加账号<span class="x" data-close>&times;</span></h3>
+      <div class="body">
+        <div class="tabs" style="margin-bottom:16px">
+          <div class="tab active" data-mode="qr">🖥 电脑端登录</div>
+          <div class="tab" data-mode="manual">📄 上传令牌文件</div>
+        </div>
+        <div id="mode-qr">
+          <div class="qr-wrap">
+            <div id="qrBox" style="min-height:88px;display:flex;align-items:center;justify-content:center;font-size:46px">🖥</div>
+            <div class="qr-tip" id="qrTip">等待你在电脑上完成登录</div>
+            <div class="qr-steps" style="text-align:left">
+              <b>四步搞定：</b><br>
+              ① 在<b>电脑</b>上点下面的「🖥 打开电脑端登录页」（会新开一个标签页）<br>
+              ② 那个页面里会出现一个<b>二维码</b><br>
+              ③ 手机用<b>微信</b>扫电脑屏幕上的二维码 → 手机上点「确认登录」<br>
+              ④ 这个窗口会自动变成 ✅，不用再点任何东西
+            </div>
+            <div class="hint" style="text-align:left;border-left:3px solid var(--warn);padding-left:10px">
+              ⚠️ <b>这条链接只能在电脑浏览器里打开。</b>发到微信里打开、或用手机浏览器打开，都会提示「登录失败」——
+              那是微信内置浏览器打不开官方登录页，不是链接坏了。<br>
+              每次点按钮都会给一条<b>全新</b>链接（旧链接用过一次就作废）。
+            </div>
+            <div style="margin-top:12px;display:flex;gap:8px;justify-content:center;align-items:center;flex-wrap:wrap">
+              <!-- 必须是原生 <a href>：window.open() 在等接口超时后只会开出空白页 -->
+              <a class="btn primary" id="qrOpen" href="#" target="_blank" rel="noopener"
+                 style="display:inline-block;text-align:center;text-decoration:none;box-sizing:border-box;opacity:.6">🖥 打开电脑端登录页</a>
+              <button class="btn sm" id="qrCopy" type="button">复制登录链接</button>
+            </div>
+            <div class="hint" id="qrLinkState" style="margin-top:8px"></div>
+            <div class="privacy-inline">🔒 只保存签到所需的登录凭据和账号昵称，加密存在本服务器，不上传任何第三方<br>随时可以在这个账号上点「退出登录」清除</div>
+            <div class="hint hidden" id="qrFallback">
+              看到「登录失败 / 请返回客户端重新发起」？两种可能：<br>
+              ① <b>你在微信或手机里打开的</b> —— 必须用电脑浏览器打开；<br>
+              ② <b>这条链接已经用过了</b> —— 点「🖥 打开电脑端登录页」会给你一条全新的。
+            </div>
+          </div>
+          <div id="qrCred" class="hidden" style="margin-top:14px"></div>
+          <div class="row" style="justify-content:center;margin-top:16px">
+            <button class="btn" id="qrRenew">重新发起登录</button>
+            <button class="btn primary hidden" id="qrNext">继续添加下一个账号</button>
+          </div>
+        </div>
+        <div id="mode-manual" class="hidden">
+          <div style="margin-bottom:12px;padding:11px 13px;border-radius:10px;background:#fff8e6;border:1px solid #eec06a;font-size:13px;line-height:1.85;color:#7a4a00">
+            <b>⚠️ 先判断：对方电脑上大概率没有这个文件。</b><br>
+            它只有装了 <b>命令行版</b> 并登录过才会生成；只装 <b>桌面版 App</b>、只用网页版的人电脑里根本没有它。
+            <b>所以给普通人发链接时，让他走「🖥 电脑端登录」，别先引导他找文件</b> —— 他找不到会以为是自己操作错了。
+          </div>
+          <div class="hint" style="margin-bottom:12px;border-left:3px solid var(--brand);padding-left:10px">
+            <b>确实有文件的话：直接拖进来就行。</b><br>
+            服务器会自己从里面找 accessToken / refreshToken —— <b>不用挑字段、不用改格式、不用填其他格子</b>。
+          </div>
+          <label id="dropZone" style="display:block;border:2px dashed var(--line);border-radius:12px;
+                 padding:18px;text-align:center;cursor:pointer;margin-bottom:12px;background:#fbfcff">
+            <div style="font-size:30px;line-height:1.2">📄</div>
+            <div style="margin-top:6px"><b>把 credentials.json 拖到这里</b>，或 <span style="color:var(--brand)">点这里选择文件</span></div>
+            <div class="sub" style="margin-top:4px">支持 .json / .txt；也可以把文件内容整段粘贴到下面</div>
+            <input type="file" id="fileInput" accept=".json,.txt,application/json,text/plain" hidden>
+          </label>
+          <label class="f"><span>文件内容 / 令牌（选文件会自动填进来）</span>
+            <textarea id="m_batch" style="min-height:110px"
+              placeholder="整份凭据文件内容直接粘贴到这里；也可以一行一个令牌"></textarea></label>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn primary" id="doBatch">解析并导入</button>
+            <button class="btn" id="clearBatch">清空</button>
+          </div>
+          <details class="hint" style="margin-top:14px">
+            <summary style="cursor:pointer;font-weight:600">❓ 这个文件在哪儿？（点开看，30 秒判断有没有）</summary>
+            <div style="margin-top:8px;line-height:1.95">
+              <b>方法 1（最快）：</b>按 <code>Win + R</code>，粘下面这行，回车 ——
+              <div style="margin:6px 0;padding:7px 9px;background:#fff;border:1px solid var(--line);border-radius:7px;user-select:all;font-family:ui-monospace,Consolas,monospace">%USERPROFILE%\.codebuddy\instances</div>
+              ⚠️ 里面是<b>反斜杠 <code>\</code></b>（回车键上方那个），<b>不是点</b>。
+              粘成 <code>%USERPROFILE%.codebuddyinstances</code> 一定提示找不到 —— 九成人栽在这。<br><br>
+              <b>方法 2（万能，位置不确定时用）：</b><code>Win + E</code> →「此电脑」→ 右上角搜索框输入
+              <code>credentials.json</code> → 回车，等 1～3 分钟。<br><br>
+              <b>方法 3（macOS）：</b>终端里跑 <code>mdfind -name credentials.json</code>，
+              或用访达「前往」→「前往文件夹」→ 粘 <code>~/.codebuddy/instances</code>。<br><br>
+              <b>⚠️ 重要前提：</b>这个文件是<b>命令行版（<code>@tencent-ai/codebuddy-code</code>）登录后生成</b>的。
+              只装了<b>桌面版图形客户端</b>的电脑<b>根本没有它</b>，任何工具都变不出来 ——
+              这种情况请用「🖥 电脑端登录」，不用在这条路上耗时间。
+            </div>
+          </details>
+          <div class="hint">给不熟悉电脑的人看的完整图文教程：项目根目录 <code>用户教程-上传令牌.md</code>
+            ；批量查找可双击 <code>tools/find-credentials.bat</code></div>
+        </div>
+      </div>
+      <div class="foot"><button class="btn" data-close>关闭</button></div>
+    </div>`);
+
+  mask.querySelectorAll('[data-close]').forEach((el) => {
+    el.onclick = () => { stopQrTimer(); mask.remove(); };
+  });
+  mask.querySelectorAll('.tab[data-mode]').forEach((tab) => {
+    tab.onclick = () => {
+      mask.querySelectorAll('.tab[data-mode]').forEach((t) => t.classList.remove('active'));
+      tab.classList.add('active');
+      const qr = tab.dataset.mode === 'qr';
+      mask.querySelector('#mode-qr').classList.toggle('hidden', !qr);
+      mask.querySelector('#mode-manual').classList.toggle('hidden', qr);
+    };
+  });
+
+  const qrBox = mask.querySelector('#qrBox');
+  const qrTip = mask.querySelector('#qrTip');
+  const qrNext = mask.querySelector('#qrNext');
+  const qrOpen = mask.querySelector('#qrOpen');
+  const qrCred = mask.querySelector('#qrCred');
+  const qrCopy = mask.querySelector('#qrCopy');
+  const qrFallback = mask.querySelector('#qrFallback');
+  let qrAuthUrl = '';
+  let qrTries = 0;
+
+  function copyText(text) {
+    if (navigator.clipboard && window.isSecureContext) {
+      return navigator.clipboard.writeText(text);
+    }
+    return new Promise((resolve, reject) => {
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+        resolve();
+      } catch (e) { reject(e); }
+    });
+  }
+
+  let qrSids = [];
+
+  /* 申请一条全新的登录链接。state 只能用一次，所以每次打开/复制都要重新申请。 */
+  async function mintLink() {
+    const { data } = await api('/api/qr/start', { method: 'POST', body: {} });
+    if (data.sid && qrSids.indexOf(data.sid) === -1) qrSids.push(data.sid);
+    if (data.auth_url) qrAuthUrl = data.auth_url;
+    return data;
+  }
+
+  function finishOk(acc) {
+    stopQrTimer();
+    qrSids = [];
+    qrFallback.classList.add('hidden');
+    const who = acc.nickname || acc.uid || '账号';
+    qrTip.textContent = acc.already_today ? `✅ ${who}：今天已经添加过了` : `✅ 已添加：${who}`;
+    if (acc.notify_configured) qrTip.textContent += '，积分通知正在推到微信';
+    qrTip.style.color = 'var(--ok)';
+    qrBox.innerHTML = '<div style="font-size:48px">✅</div>';
+    qrCred.innerHTML = credentialCard(acc.portal_username, acc.portal_password, acc.nickname);
+    qrCred.classList.remove('hidden');
+    qrNext.classList.remove('hidden');
+    toast('账号添加成功', 'ok');
+    reloadAll().catch(() => {});
+  }
+
+  /* 同时盯着所有已发出的链接：任何一条扫成功都算成功 */
+  function startPolling() {
+    if (qrTimer) return;
+    qrTimer = setInterval(async () => {
+      qrTries += 1;                                   // 每轮只加一次，不管在盯几条链接
+      if (qrTries === 12) qrFallback.classList.remove('hidden');
+      for (const sid of qrSids.slice()) {
+        try {
+          const { data } = await api('/api/qr/poll/' + sid);
+          if (data.status === 'pending') {
+            qrTip.textContent = `等待你在电脑上完成登录…（链接剩余 ${data.remaining}s）`;
+          } else if (data.status === 'success') {
+            finishOk(data.account || {});
+            return;
+          } else {
+            qrSids = qrSids.filter((x) => x !== sid);
+            if (!qrSids.length) {
+              stopQrTimer();
+              qrTip.textContent = data.message || '登录链接已失效';
+              qrTip.style.color = 'var(--err)';
+              qrFallback.classList.remove('hidden');
+            }
+          }
+        } catch (e) { /* 网络抖动继续轮询 */ }
+      }
+    }, 1800);
+  }
+
+  let qrLinkAt = 0;          // 当前 href 的生成时间
+  let qrPrefetching = false;
+
+  async function startLogin() {
+    stopQrTimer();
+    qrSids = [];
+    qrNext.classList.add('hidden');
+    qrFallback.classList.add('hidden');
+    qrCred.classList.add('hidden');
+    qrCred.innerHTML = '';
+    qrAuthUrl = '';
+    qrTries = 0;
+    qrBox.textContent = '🖥';
+    qrTip.textContent = '等待你在电脑上完成登录';
+    qrTip.style.color = '';
+    try {
+      await mintLink();
+    } catch (e) {
+      qrTip.textContent = e.message;
+      qrTip.style.color = 'var(--err)';
+      return;
+    }
+    // 顺手把这条链接填进按钮：一进弹窗按钮就是可点的真链接
+    if (qrAuthUrl) {
+      qrOpen.setAttribute('href', qrAuthUrl);
+      qrOpen.style.opacity = '1';
+      qrLinkAt = Date.now();
+      setQrLinkState('✅ 链接已就绪，点按钮即可（5 分钟内有效）', true);
+    }
+    startPolling();
+  }
+
+  /* 「打开电脑端登录页」：每次都给一条全新链接，新标签页打开 */
+  /* 「打开电脑端登录页」：改成原生 <a href>。
+     之前用 window.open()，等接口 1~3 秒后浏览器「用户激活」已过期，
+     只会开出一个空白页并丢掉导航（about:blank）。原生链接是用户亲手点的，永远不会被拦。 */
+  function setQrLinkState(text, ok) {
+    const el = document.getElementById('qrLinkState');
+    if (!el) return;
+    el.textContent = text || '';
+    el.style.color = ok ? 'var(--ok)' : 'var(--err)';
+  }
+
+  async function prefetchQr() {
+    if (qrPrefetching) return;
+    qrPrefetching = true;
+    setQrLinkState('正在准备登录链接…', false);
+    try {
+      await mintLink();
+      if (!qrAuthUrl) throw new Error('没拿到登录链接');
+      qrOpen.setAttribute('href', qrAuthUrl);
+      qrOpen.style.opacity = '1';
+      qrOpen.textContent = '🖥 打开电脑端登录页';
+      qrLinkAt = Date.now();
+      setQrLinkState('✅ 链接已就绪，点按钮即可（5 分钟内有效）', true);
+      startPolling();
+    } catch (e) {
+      qrOpen.style.opacity = '.6';
+      setQrLinkState('准备失败：' + e.message + '（再点一次按钮重试）', false);
+    } finally {
+      qrPrefetching = false;
+    }
+  }
+
+  qrOpen.addEventListener('click', (ev) => {
+    if (!qrLinkAt || qrOpen.getAttribute('href') === '#') {
+      ev.preventDefault();
+      setQrLinkState('正在准备链接，约 2 秒后好，好了再点一次', false);
+      prefetchQr();
+      return;
+    }
+    if (Date.now() - qrLinkAt > 4 * 60 * 1000) {
+      ev.preventDefault();
+      qrLinkAt = 0;
+      prefetchQr();
+      setQrLinkState('链接快过期了，正在换新的，1~2 秒后再点', false);
+      return;
+    }
+    setQrLinkState('已在新标签页打开登录页', true);
+    setTimeout(() => { qrLinkAt = 0; prefetchQr(); }, 2500);
+  });
+
+  qrCopy.onclick = async () => {
+    const label = qrCopy.textContent;
+    qrCopy.disabled = true;
+    qrCopy.textContent = '生成中…';
+    try {
+      await mintLink();
+      startPolling();
+    } catch (e) { /* 新申请失败就退回用当前这条 */ }
+    qrCopy.disabled = false;
+    qrCopy.textContent = label;
+    if (!qrAuthUrl) { toast('没拿到登录链接，稍后再点一次', 'err'); return; }
+    try {
+      await copyText(qrAuthUrl);
+      toast('已复制一条全新链接：在电脑浏览器打开（每条只能用一次）', 'ok');
+    } catch (e) {
+      window.prompt('复制这个链接，在电脑浏览器打开：', qrAuthUrl);
+    }
+  };
+
+  mask.querySelector('#qrRenew').onclick = startLogin;
+  qrNext.onclick = startLogin;
+
+  /* ---------------- 上传令牌文件：整份内容丢给服务器解析 ---------------- */
+  const dropZone = mask.querySelector('#dropZone');
+  const fileInput = mask.querySelector('#fileInput');
+  const batchArea = mask.querySelector('#m_batch');
+
+  function showImportResult(data) {
+    const list = data.credentials || [];
+    const failed = data.failed || [];
+    const lines = list.map((c) =>
+      `${c.username}  ${c.password}${c.nickname ? '   # ' + c.nickname : ''}`).join('\n');
+    const box = modal(`<div class="modal">
+      <h3>导入完成<span class="x" data-close>&times;</span></h3>
+      <div class="body">
+        <p class="sub">从内容里解析到 ${data.total} 条，成功导入 ${data.imported} 个${
+          failed.length ? '，失败 ' + failed.length + ' 个' : ''}。</p>
+        ${lines ? `<div class="cred-box">
+          <div class="cred-title">前端查看账号密码</div>
+          <pre style="margin:8px 0 0;white-space:pre-wrap;font-size:12.5px;line-height:1.95">${esc(lines)}</pre>
+          <button class="btn sm primary" id="copyAllCred" style="margin-top:10px">复制全部</button>
+        </div>` : ''}
+        ${failed.length ? `<div class="hint" style="margin-top:10px;border-left:3px solid var(--err);padding-left:10px">
+          <b>没导进来的：</b><br>${failed.map((f) => esc(f)).join('<br>')}
+        </div>` : ''}
+        <div class="hint">⚠️ 密码只显示这一次，请立即复制保存。忘了可以点账号上的「前端」→「重置密码」。</div>
+      </div>
+      <div class="foot"><button class="btn primary" data-close>知道了</button></div>
+    </div>`);
+    const btn = box.querySelector('#copyAllCred');
+    if (btn) btn.onclick = () => copyToClipboard(lines);
+  }
+
+  async function doImport(content) {
+    const text = String(content || '').trim();
+    if (!text) { toast('先选一个文件，或把文件内容粘贴进来', 'err'); return; }
+    let data;
+    try {
+      const res = await api('/api/accounts/import-batch', { method: 'POST', body: { text } });
+      data = res.data;
+    } catch (e) {
+      toast(e.message, 'err');
+      return;
+    }
+    await reloadAll();
+    mask.remove();
+    showImportResult(data);
+  }
+
+  function readFile(file) {
+    if (!file) return;
+    if (file.size > 256 * 1024) {
+      toast('文件太大（超过 256KB）：只需要凭据文件本身，别上传别的东西', 'err');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      batchArea.value = String(reader.result || '');
+      doImport(batchArea.value);
+    };
+    reader.onerror = () => toast('读文件失败，请改用「记事本打开后复制粘贴」', 'err');
+    reader.readAsText(file);
+  }
+
+  mask.querySelector('#doBatch').onclick = () => doImport(batchArea.value);
+  mask.querySelector('#clearBatch').onclick = () => { batchArea.value = ''; batchArea.focus(); };
+  fileInput.onchange = () => readFile(fileInput.files && fileInput.files[0]);
+
+  ['dragenter', 'dragover'].forEach((ev) => dropZone.addEventListener(ev, (e) => {
+    e.preventDefault();
+    dropZone.style.borderColor = 'var(--brand)';
+    dropZone.style.background = '#f0f6ff';
+  }));
+  ['dragleave', 'drop'].forEach((ev) => dropZone.addEventListener(ev, (e) => {
+    e.preventDefault();
+    dropZone.style.borderColor = 'var(--line)';
+    dropZone.style.background = '#fbfcff';
+  }));
+  dropZone.addEventListener('drop', (e) => {
+    const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+    readFile(f);
+  });
+
+  startLogin();
+};
+
+/* ------------------------------------------------------------------ 启动 */
+async function reloadAll() {
+  await Promise.all([loadOverview(), loadAccounts()]);
+}
+
+/* 管理端显示用户自助页地址，方便直接抄给对方 */
+const portalUrlEl = $('portalUrl');
+if (portalUrlEl) portalUrlEl.textContent = location.origin + '/me';
+
+(async function boot() {
+  try {
+    const me = await api('/api/me');
+    if (me.authed) { showApp(); await reloadAll(); } else { showLogin(); }
+  } catch (e) { showLogin(); }
+})();
+</script>
+</body>
+</html>

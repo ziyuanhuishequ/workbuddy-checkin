@@ -1,0 +1,28 @@
+services:
+  workbuddy-checkin:
+    build: .
+    image: workbuddy-checkin:latest
+    container_name: workbuddy-checkin
+    restart: unless-stopped
+
+    # 默认只绑定本机回环，由宿主机 Nginx 反代对外提供 HTTPS。
+    # 如果你没有反代、想直接开放端口，改成 "8848:8848" 并务必设置强密码。
+    ports:
+      - "127.0.0.1:8848:8848"
+
+    environment:
+      WB_HOST: "0.0.0.0"
+      WB_PORT: "8848"
+      WB_TZ_OFFSET: "8"
+      WB_DATA_DIR: /app/data
+      # 来自同目录的 .env 文件（没有就用: docker compose config 会直接报错提醒你）
+      WB_PASSWORD: "${WB_PASSWORD:?请先在 .env 里设置 WB_PASSWORD}"
+
+    volumes:
+      - ./data:/app/data
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

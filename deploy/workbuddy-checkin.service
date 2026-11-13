@@ -1,0 +1,16 @@
+[Unit]
+Description=WorkBuddy 自动签到（多账号扫码登录 + 定时签到）
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/www/wwwroot/workbuddy-checkin
+EnvironmentFile=/www/wwwroot/workbuddy-checkin/.env
+ExecStart=/www/wwwroot/workbuddy-checkin/venv/bin/python /www/wwwroot/workbuddy-checkin/run.py
+Restart=always
+RestartSec=5
+User=root
+
+[Install]
+WantedBy=multi-user.target
